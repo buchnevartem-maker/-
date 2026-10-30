@@ -2,9 +2,11 @@
 # ИГРА ЗАБРОШЕННАЯ ШАХТА
 # Автор: Артем Бучнев
 # Дата: октябрь 2026
-# Этап 13: Кортежи, множества, матрицы. Карта 5×5,
-# шаги по направлениям, команда map с героем,
-# рекурсивный scout и уникальный лут через множество.
+# Этап 14: Модули и библиотеки. Правила боя, цены и
+# карточки врагов живут в dungeon.py и вызываются через
+# точку. Вывод красится colorama с откатом, если библиотеки нет.
+# Решение: random.choice остаётся в game.py, dungeon.py
+# импортирует random только для самотеста.
 # Решение: боевой эликсир копит надбавку до конца забега,
 # каждая покупка добавляет +2 к урону за штуку.
 # Решение: bonus прибавляется к обычному урону до удвоения
@@ -14,6 +16,15 @@
 # ================================================
 
 import random
+import dungeon
+
+try:
+    from colorama import Fore, Style, init
+    init()
+    COLOR = True
+except ImportError:
+    COLOR = False
+
 
 title = "ЗАБРОШЕННАЯ ШАХТА"
 frame = "=" * (len(title) + 6)
@@ -68,15 +79,6 @@ print()
 
 enemies = ["упырь", "скелет", "паук", "летучая мышь"]
 
-enemy_stats = {
-    "скелет":       {"hp": 45, "damage": 6, "loot": 25},
-    "упырь":        {"hp": 30, "damage": 4, "loot": 15},
-    "паук":         {"hp": 20, "damage": 3, "loot": 10},
-    "летучая мышь": {"hp": 12, "damage": 2, "loot": 5},
-}
-
-prices = {"зелье": 10, "масло": 15, "эликсир": 40}
-
 log = []
 gold_total = 0
 ability_bonus = 0
@@ -123,67 +125,6 @@ MENU = ["Что делаешь? (номер или команда; help — сп
         "0 - выйти из подземелья (exit)"]
 
 
-
-def hero_hit(strike_n, bonus=0):
-    """Урон героя в удар номер strike_n.
-    bonus — надбавка к обычному урону, по умолчанию 0.
-    Надбавка прибавляется до удвоения критом.
-    Возвращает пару (hit, crit): урон и признак критического удара.
-    Читает глобальные damage и crit_damage, ничего не меняет.
-    """
-    if strike_n % 3 == 0:
-        return (damage + bonus) * 2, True
-    return damage + bonus, False
-
-
-def fight(enemy, hero_health, bonus=0):
-    """Бой с enemy до гибели одного из двоих.
-    Карточка врага берётся из enemy_stats по имени: нужны ключи
-    hp, damage, loot. bonus — надбавка к урону героя, по умолчанию 0.
-    Печатает строки раундов.
-    Возвращает (rounds, won, hero_health, loot).
-    Глобальные переменные не меняет.
-    """
-    stats = enemy_stats[enemy]
-    enemy_hp = float(stats["hp"])
-    rounds = []
-    round_n = 0
-    print(f"Вы спускаетесь по ступеням. Из темноты появляется {enemy}!")
-    while enemy_hp > 0 and hero_health > 0:
-        round_n += 1
-        hit, crit = hero_hit(round_n, bonus=bonus)
-        enemy_hp -= hit
-        line = f"Раунд {round_n}: вы наносите {hit:.1f} урона"
-        if crit:
-            line += " — критический!"
-        if enemy_hp <= 0:
-            line += " Враг падает."
-            rounds.append([round_n, hit, 0])
-        else:
-            blow = stats["damage"]
-            hero_health -= blow
-            line += f" Здоровье врага: {enemy_hp:.1f}. Враг бьёт в ответ на {blow}."
-            rounds.append([round_n, hit, blow])
-        print(line)
-    won = enemy_hp <= 0
-    if won:
-        loot = stats["loot"]
-    else:
-        loot = 0
-    return rounds, won, hero_health, loot
-
-
-def buy(price, gold, quantity=1):
-    """Покупает quantity штук товара ценой price за золото gold.
-    quantity по умолчанию 1. Возвращает (gold_left, ok): остаток
-    золота и признак успешной покупки. Ничего не печатает.
-    """
-    cost = price * quantity
-    if gold >= cost:
-        return gold - cost, True
-    return gold, False
-
-
 def print_leaderboard(log):
     """Печатает топ-3 раундов по урону героя и рекорд врага.
     Возвращает None: контракт функции — печать, а не данные.
@@ -224,6 +165,17 @@ def scout(r, c, seen):
         total += scout(r + dr, c + dc, seen)
     return total
 
+
+def print_state(health, stamina, enemies_count, gold_total):
+    """Печатает строку состояния зелёным, если colorama доступна.
+    Возвращает None.
+    """
+    state = (f"Здоровье: {health}  Запас сил: {stamina}  "
+             f"Врагов осталось: {enemies_count}  Золото: {gold_total}")
+    if COLOR:
+        print(Fore.GREEN + state + Style.RESET_ALL)
+    else:
+        print(state)
 
 running = True
 actions = 0
@@ -303,7 +255,7 @@ try:
                 total_damage = 0
                 crit_count = 0
                 for i in range(1, strikes + 1):
-                    hit_damage, crit = hero_hit(i)
+                    hit_damage, crit = dungeon.hero_hit(i, damage, crit_damage)
                     if crit:
                         crit_count += 1
                         print(f"Удар {i}: {hit_damage:.1f} урона — критический!")
@@ -319,20 +271,25 @@ try:
                     print("Вы спускаетесь вниз, но подземелье пусто. Здесь больше некого искать.")
                 else:
                     enemy = random.choice(enemies)
-                    rounds, won, health, loot = fight(enemy, health, bonus=ability_bonus)
+                    rounds, won, health, loot = dungeon.fight(
+                        enemy, health, ability_bonus, damage, crit_damage)
                     for r in rounds:
                         log.append(r)
                     if won:
                         gold_total += loot
                         enemies.remove(enemy)
-                        print(f"{enemy} побеждён! В подземелье осталось врагов: {len(enemies)}. "
-                              f"Добыча: {loot} золота.")
+                        msg = (f"{enemy} побеждён! В подземелье осталось врагов: {len(enemies)}. "
+                               f"Добыча: {loot} золота.")
+                        if COLOR:
+                            print(Fore.YELLOW + msg + Style.RESET_ALL)
+                        else:
+                            print(msg)
                         print(f"Бой: {len(rounds)} раундов.")
             case "leaders":
                 print_leaderboard(log)
             case "shop":
                 print("Магазин:")
-                for name, price in prices.items():
+                for name, price in dungeon.prices.items():
                     print(f"{name}: {price} золота")
             case "backpack":
                 if not inventory:
@@ -364,17 +321,18 @@ try:
                 if item == "":
                     print("Купить что? Введи: buy <предмет>.")
                     continue
-                if item not in prices:
+                if item not in dungeon.prices:
                     print("Такого предмета в магазине нет.")
                     continue
-                gold_total, ok = buy(prices[item], gold_total, quantity=qty)
+                gold_total, ok = dungeon.buy(dungeon.prices[item], gold_total, quantity=qty)
                 if ok:
                     inventory[item] = inventory.get(item, 0) + qty
                     if item == "эликсир":
                         ability_bonus += 2 * qty
-                    print(f"Куплено {qty} {item} за {prices[item] * qty} золота. Осталось золота: {gold_total}.")
+                    print(f"Куплено {qty} {item} за {dungeon.prices[item] * qty} золота. "
+                          f"Осталось золота: {gold_total}.")
                 else:
-                    print(f"Не хватает золота: нужно {prices[item] * qty}, есть {gold_total}.")
+                    print(f"Не хватает золота: нужно {dungeon.prices[item] * qty}, есть {gold_total}.")
             case "map":
                 print("Карта:")
                 for i in range(len(MAP)):
@@ -398,8 +356,7 @@ try:
         if running:
             actions += 1
             print()
-            print(f"Здоровье: {health}  Запас сил: {stamina}  "
-                  f"Врагов осталось: {len(enemies)}  Золото: {gold_total}")
+            print_state(health, stamina, len(enemies), gold_total)
             if health <= 0:
                 print()
                 print(f"{hero_name} со стоном падает на холодный пол. Шахта забирает ещё одну душу.")

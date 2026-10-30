@@ -1,10 +1,12 @@
 # ================================================
 # ИГРА ЗАБРОШЕННАЯ ШАХТА
 # Автор: Артем Бучнев
-# Дата: октябрь 2026
-# Этап 14: Модули и библиотеки. Правила боя, цены и
-# карточки врагов живут в dungeon.py и вызываются через
-# точку. Вывод красится colorama с откатом, если библиотеки нет.
+# Дата:  октябрь 2026
+# Этап 15: Файлы и JSON. Выход и прерывание сохраняют
+# забег в save.json, следующий запуск спрашивает,
+# продолжить ли. Гибель стирает сохранение.
+# Решение: при продолжении формуляр не перепечатывается,
+# состояние показывает строка статуса после первого действия.
 # Решение: random.choice остаётся в game.py, dungeon.py
 # импортирует random только для самотеста.
 # Решение: боевой эликсир копит надбавку до конца забега,
@@ -16,6 +18,8 @@
 # ================================================
 
 import random
+import os
+import json
 import dungeon
 
 try:
@@ -25,7 +29,6 @@ try:
 except ImportError:
     COLOR = False
 
-
 title = "ЗАБРОШЕННАЯ ШАХТА"
 frame = "=" * (len(title) + 6)
 print(frame)
@@ -33,70 +36,111 @@ print(f"   {title}   ")
 print(frame)
 print()
 
-print("Как зовут героя?")
-hero_name = input()
-print(f"Добро пожаловать, {hero_name}!")
-print("Ты стоишь у входа в заброшенную шахту. Оттуда тянет могильным холодом и угольной пылью.")
-print()
+loaded = None
+if os.path.exists("save.json"):
+    print("Найдено сохранение. Продолжить забег? (да/нет)")
+    answer = input().strip().lower()
+    if answer in ("да", "yes", "д"):
+        try:
+            with open("save.json", encoding="utf-8") as f:
+                loaded = json.load(f)
+        except (json.JSONDecodeError, OSError):
+            print("Сохранение повреждено. Начинаем новый забег.")
+            loaded = None
 
-print("Настройка героя.")
-print("Здоровье, сила, ловкость, удача — по одному числу в строке:")
-while True:
-    try:
-        health = int(input())
-        strength = int(input())
-        agility = int(input())
-        luck = int(input())
-        if health <= 0:
-            raise ValueError(f"Здоровье должно быть положительным, а введено {health}")
-        if strength < 0 or agility < 0 or luck < 0:
-            raise ValueError("Сила, ловкость и удача не могут быть отрицательными")
-        if agility > strength + 10:
-            raise ValueError("Ловкость не может превышать силу более чем на 10")
-        break
-    except ValueError as e:
-        print(f"{e}. Введите все четыре числа снова:")
-print()
+if loaded is None:
+    
+    print("Как зовут героя?")
+    hero_name = input()
+    print(f"Добро пожаловать, {hero_name}!")
+    print("Ты стоишь у входа в заброшенную шахту. Оттуда тянет могильным холодом и угольной пылью.")
+    print()
 
-base_attack = 10
-damage = base_attack + strength * 1.5
-crit_damage = damage * 2
-stamina = (health // 10) + luck
+    print("Настройка героя.")
+    print("Здоровье, сила, ловкость, удача — по одному числу в строке:")
+    while True:
+        try:
+            health = int(input())
+            strength = int(input())
+            agility = int(input())
+            luck = int(input())
+            if health <= 0:
+                raise ValueError(f"Здоровье должно быть положительным, а введено {health}")
+            if strength < 0 or agility < 0 or luck < 0:
+                raise ValueError("Сила, ловкость и удача не могут быть отрицательными")
+            if agility > strength + 10:
+                raise ValueError("Ловкость не может превышать силу более чем на 10")
+            break
+        except ValueError as e:
+            print(f"{e}. Введите все четыре числа снова:")
+    print()
 
-max_health = health
-max_stamina = stamina
+    base_attack = 10
+    damage = base_attack + strength * 1.5
+    crit_damage = damage * 2
+    stamina = (health // 10) + luck
 
-print("Характеристики героя:")
-print(f"Здоровье: {health}")
-print(f"Сила:     {strength}")
-print(f"Ловкость: {agility}")
-print(f"Удача:    {luck}")
-print()
-print(f"Урон героя:       {damage:.1f}")
-print(f"Критический урон: {crit_damage:.1f}")
-print(f"Запас сил:        {stamina}")
-print()
+    max_health = health
+    max_stamina = stamina
 
-enemies = ["упырь", "скелет", "паук", "летучая мышь"]
+    print("Характеристики героя:")
+    print(f"Здоровье: {health}")
+    print(f"Сила:     {strength}")
+    print(f"Ловкость: {agility}")
+    print(f"Удача:    {luck}")
+    print()
+    print(f"Урон героя:       {damage:.1f}")
+    print(f"Критический урон: {crit_damage:.1f}")
+    print(f"Запас сил:        {stamina}")
+    print()
 
-log = []
-gold_total = 0
-ability_bonus = 0
-inventory = {}
+    enemies = ["упырь", "скелет", "паук", "летучая мышь"]
+    log = []
+    gold_total = 0
+    ability_bonus = 0
+    inventory = {}
 
-MAP = [
-    ["#", "#", "#", "#", "#"],
-    ["#", ".", ".", "#", "#"],
-    ["#", ".", "#", ".", "#"],
-    ["#", ".", ".", ".", "#"],
-    ["#", "#", "S", ".", "#"],
-]
-
-hero_r, hero_c = 4, 2
-visited = {(4, 2)}
-
-LOOT = {(1, 1): "старая монета", (2, 3): "пыльное зелье", (3, 3): "самоцвет стража"}
-found_loot = set()
+    MAP = [
+        ["#", "#", "#", "#", "#"],
+        ["#", ".", ".", "#", "#"],
+        ["#", ".", "#", ".", "#"],
+        ["#", ".", ".", ".", "#"],
+        ["#", "#", "S", ".", "#"],
+    ]
+    hero_r, hero_c = 4, 2
+    visited = {(4, 2)}
+    LOOT = {(1, 1): "старая монета", (2, 3): "пыльное зелье", (3, 3): "самоцвет стража"}
+    found_loot = set()
+    actions = 0
+else:
+   
+    hero_name = loaded["hero"]
+    health = loaded["health"]
+    stamina = loaded["stamina"]
+    gold_total = loaded["gold"]
+    actions = loaded["actions"]
+    enemies = loaded["enemies"]
+    hero_r, hero_c = loaded["position"]
+    visited = {tuple(p) for p in loaded["visited"]}
+    found_loot = set(loaded["loot"])
+    inventory = loaded.get("inventory", {})
+    ability_bonus = loaded.get("ability_bonus", 0)
+    log = loaded.get("log", [])
+    damage = loaded["damage"]
+    crit_damage = loaded["crit_damage"]
+    max_health = loaded["max_health"]
+    max_stamina = loaded["max_stamina"]
+    MAP = [
+        ["#", "#", "#", "#", "#"],
+        ["#", ".", ".", "#", "#"],
+        ["#", ".", "#", ".", "#"],
+        ["#", ".", ".", ".", "#"],
+        ["#", "#", "S", ".", "#"],
+    ]
+    LOOT = {(1, 1): "старая монета", (2, 3): "пыльное зелье", (3, 3): "самоцвет стража"}
+    print(f"Забег продолжен: здоровье {health}, золото {gold_total}, "
+          f"врагов осталось {len(enemies)}.")
+    print()
 
 DIRECTIONS = {"north": (-1, 0), "south": (1, 0), "west": (0, -1), "east": (0, 1)}
 
@@ -106,7 +150,7 @@ num_to_verb = {"1": "look", "2": "go", "3": "rest", "4": "listen",
 
 commands = ["look", "go <direction>", "rest", "listen", "torch", "train",
             "descend", "leaders", "shop", "backpack", "drink potion",
-            "buy <item> [count]", "map", "scout", "help", "exit"]
+            "buy <item> [count]", "map", "scout", "newgame", "help", "exit"]
 
 MENU = ["Что делаешь? (номер или команда; help — справка)",
         "1 - осмотреться (look)",
@@ -122,7 +166,35 @@ MENU = ["Что делаешь? (номер или команда; help — сп
         "11 - выпить зелье (drink)",
         "map - карта подземелья",
         "scout - сколько комнат доступно",
+        "newgame - стереть сохранение",
         "0 - выйти из подземелья (exit)"]
+
+
+
+def write_save():
+    """Собирает состояние забега и пишет его в save.json.
+    Кортежи и множества превращает в списки: JSON их не знает.
+    Возвращает None.
+    """
+    save = {}
+    save["hero"] = hero_name
+    save["health"] = health
+    save["stamina"] = stamina
+    save["gold"] = gold_total
+    save["actions"] = actions
+    save["enemies"] = enemies
+    save["position"] = [hero_r, hero_c]
+    save["visited"] = [list(p) for p in visited]
+    save["loot"] = sorted(found_loot)
+    save["inventory"] = inventory
+    save["ability_bonus"] = ability_bonus
+    save["log"] = log
+    save["damage"] = damage
+    save["crit_damage"] = crit_damage
+    save["max_health"] = max_health
+    save["max_stamina"] = max_stamina
+    with open("save.json", "w", encoding="utf-8") as f:
+        json.dump(save, f, ensure_ascii=False, indent=2)
 
 
 def print_leaderboard(log):
@@ -177,8 +249,8 @@ def print_state(health, stamina, enemies_count, gold_total):
     else:
         print(state)
 
+
 running = True
-actions = 0
 outcome = "прерывание"
 
 try:
@@ -200,6 +272,8 @@ try:
         match verb:
             case "exit":
                 print("Вы разворачиваетесь и поднимаетесь обратно к свету. Шахта остаётся позади.")
+                write_save()
+                print("Прогресс сохранён.")
                 outcome = "выход"
                 running = False
             case "look":
@@ -346,6 +420,13 @@ try:
             case "scout":
                 seen = set()
                 print(f"Разведка: {scout(hero_r, hero_c, seen)} комнат доступно.")
+            case "newgame":
+                if os.path.exists("save.json"):
+                    os.remove("save.json")
+                    print("Сохранение стёрто. Следующий забег начнётся с чистого листа.")
+                else:
+                    print("Нет сохранения, которое можно стереть.")
+                continue
             case "help":
                 print("Команды: " + ", ".join(commands) + ".")
                 print("Номера 0-11 работают как раньше.")
@@ -360,12 +441,15 @@ try:
             if health <= 0:
                 print()
                 print(f"{hero_name} со стоном падает на холодный пол. Шахта забирает ещё одну душу.")
+                if os.path.exists("save.json"):
+                    os.remove("save.json")
                 outcome = "гибель"
                 running = False
 
 except KeyboardInterrupt:
     print()
     print("Игрок прервал сеанс.")
+    write_save()
 finally:
     print()
     print(frame)

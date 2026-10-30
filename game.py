@@ -2,11 +2,9 @@
 # ИГРА ЗАБРОШЕННАЯ ШАХТА
 # Автор: Артем Бучнев
 # Дата: октябрь 2026
-# Этап 12: Строки глубже. Меню принимает и номера, и слова.
-# «2» и «go» делают одно и то же, «buy potion» покупает
-# без вопросов магазина, «drink potion» пьёт из рюкзака,
-# «help» печатает справку через join. Незнакомая команда
-# не тратит игровой круг и предлагает справку.
+# Этап 13: Кортежи, множества, матрицы. Карта 5×5,
+# шаги по направлениям, команда map с героем,
+# рекурсивный scout и уникальный лут через множество.
 # Решение: боевой эликсир копит надбавку до конца забега,
 # каждая покупка добавляет +2 к урону за штуку.
 # Решение: bonus прибавляется к обычному урону до удвоения
@@ -84,17 +82,33 @@ gold_total = 0
 ability_bonus = 0
 inventory = {}
 
+MAP = [
+    ["#", "#", "#", "#", "#"],
+    ["#", ".", ".", "#", "#"],
+    ["#", ".", "#", ".", "#"],
+    ["#", ".", ".", ".", "#"],
+    ["#", "#", "S", ".", "#"],
+]
+
+hero_r, hero_c = 4, 2
+visited = {(4, 2)}
+
+LOOT = {(1, 1): "старая монета", (2, 3): "пыльное зелье", (3, 3): "самоцвет стража"}
+found_loot = set()
+
+DIRECTIONS = {"north": (-1, 0), "south": (1, 0), "west": (0, -1), "east": (0, 1)}
+
 num_to_verb = {"1": "look", "2": "go", "3": "rest", "4": "listen",
                "5": "torch", "6": "train", "7": "descend", "8": "leaders",
                "9": "shop", "10": "backpack", "11": "drink", "0": "exit"}
 
-commands = ["look", "go", "rest", "listen", "torch", "train", "descend",
-            "leaders", "shop", "backpack", "drink potion",
-            "buy <item> [count]", "exit"]
+commands = ["look", "go <direction>", "rest", "listen", "torch", "train",
+            "descend", "leaders", "shop", "backpack", "drink potion",
+            "buy <item> [count]", "map", "scout", "help", "exit"]
 
 MENU = ["Что делаешь? (номер или команда; help — справка)",
         "1 - осмотреться (look)",
-        "2 - идти вперёд (go)",
+        "2 - идти вперёд (go) или go north/south/west/east",
         "3 - отдохнуть (rest)",
         "4 - постучать по стене (listen)",
         "5 - зажечь фонарь (torch)",
@@ -104,7 +118,10 @@ MENU = ["Что делаешь? (номер или команда; help — сп
         "9 - магазин (shop)",
         "10 - рюкзак (backpack)",
         "11 - выпить зелье (drink)",
+        "map - карта подземелья",
+        "scout - сколько комнат доступно",
         "0 - выйти из подземелья (exit)"]
+
 
 
 def hero_hit(strike_n, bonus=0):
@@ -194,6 +211,20 @@ def print_run_summary(log):
         print("В этом забеге боёв не было.")
 
 
+def scout(r, c, seen):
+    """Рекурсивно считает доступные комнаты от клетки (r, c).
+    seen — общее множество посещённых клеток обхода.
+    Возвращает число доступных комнат.
+    """
+    if (r, c) in seen or MAP[r][c] == "#":
+        return 0
+    seen.add((r, c))
+    total = 1
+    for dr, dc in DIRECTIONS.values():
+        total += scout(r + dr, c + dc, seen)
+    return total
+
+
 running = True
 actions = 0
 outcome = "прерывание"
@@ -222,14 +253,29 @@ try:
             case "look":
                 print("Вы осмотрелись. Стены покрыты каменистой пылью, вдали виден тёмный проход.")
             case "go":
-                cost = 2
-                if stamina >= cost:
-                    stamina -= cost
-                    print("Вы осторожно идёте вперёд. Под ногами хрустит мелкая угольная крошка.")
+                if len(words) > 1 and words[1] in DIRECTIONS:
+                    dr, dc = DIRECTIONS[words[1]]
+                    nr, nc = hero_r + dr, hero_c + dc
+                    if 0 <= nr < len(MAP) and 0 <= nc < len(MAP[nr]) and MAP[nr][nc] != "#":
+                        hero_r, hero_c = nr, nc
+                        visited.add((hero_r, hero_c))
+                        if (hero_r, hero_c) in LOOT:
+                            item = LOOT[(hero_r, hero_c)]
+                            if item not in found_loot:
+                                found_loot.add(item)
+                                print(f"Вы нашли {item}! Уникальный лут: {len(found_loot)}.")
+                        print(f"Вы шагнули на {words[1]}. Комната ({hero_r}, {hero_c}).")
+                    else:
+                        print(f"Нельзя идти на {words[1]}: стена или край.")
                 else:
-                    health -= (cost - stamina)
-                    stamina = 0
-                    print("Сил больше нет — вы бредёте во тьме на одном упорстве. Дышать тяжело.")
+                    cost = 2
+                    if stamina >= cost:
+                        stamina -= cost
+                        print("Вы осторожно идёте вперёд. Под ногами хрустит мелкая угольная крошка.")
+                    else:
+                        health -= (cost - stamina)
+                        stamina = 0
+                        print("Сил больше нет — вы бредёте во тьме на одном упорстве. Дышать тяжело.")
             case "rest":
                 print("Вы садитесь на холодный камень и переводите дух. Силы немного возвращаются.")
             case "listen":
@@ -329,6 +375,19 @@ try:
                     print(f"Куплено {qty} {item} за {prices[item] * qty} золота. Осталось золота: {gold_total}.")
                 else:
                     print(f"Не хватает золота: нужно {prices[item] * qty}, есть {gold_total}.")
+            case "map":
+                print("Карта:")
+                for i in range(len(MAP)):
+                    cells = []
+                    for j in range(len(MAP[i])):
+                        if (i, j) == (hero_r, hero_c):
+                            cells.append("@")
+                        else:
+                            cells.append(MAP[i][j])
+                    print(" ".join(cells))
+            case "scout":
+                seen = set()
+                print(f"Разведка: {scout(hero_r, hero_c, seen)} комнат доступно.")
             case "help":
                 print("Команды: " + ", ".join(commands) + ".")
                 print("Номера 0-11 работают как раньше.")
